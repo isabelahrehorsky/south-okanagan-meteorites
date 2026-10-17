@@ -1,0 +1,284 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>South Okanagan Meteorite Explorer</title>
+
+  <!-- MapLibre library -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css"
+    rel="stylesheet"
+  >
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+
+  <!-- p5.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/p5.min.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+    }
+
+    #map canvas.p5Canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* South Okanagan button */
+    #okanaganButton {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      padding: 12px 16px;
+      background: white;
+      color: #333;
+      border: 1px solid #aaa;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    #okanaganButton:hover {
+      background: #eeeeee;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="map"></div>
+
+  <!-- Button to explore South Okanagan -->
+  <button id="okanaganButton">
+    Explore South Okanagan
+  </button>
+
+  <script>
+
+    // Imagined user:
+    // An amateur meteorite enthusiast in the South Okanagan.
+    //
+    // Research question:
+    // Where have meteorites been recorded in and around
+    // the South Okanagan, and were they seen falling
+    // or discovered later?
+
+    // Create the MapLibre map
+    const myMap = new maplibregl.Map({
+      container: 'map',
+      center: [-119.53, 49.28],
+      zoom: 4,
+      style: 'https://tiles.openfreemap.org/styles/positron'
+    });
+
+    // Add zoom controls
+    myMap.addControl(
+      new maplibregl.NavigationControl()
+    );
+
+    // Button to zoom into South Okanagan
+    document.getElementById('okanaganButton')
+      .addEventListener('click', function() {
+
+        myMap.flyTo({
+          center: [-119.5, 49.3],
+          zoom: 8,
+          essential: true
+        });
+
+      });
+
+    // Convert geographic coordinates to pixels
+    function latLngToPixel(lat, lng) {
+      return myMap.project([lng, lat]);
+    }
+
+    // Convert pixels to geographic coordinates
+    function pixelToLatLng(x, y) {
+      const ll = myMap.unproject([x, y]);
+
+      return {
+        lat: ll.lat,
+        lng: ll.lng
+      };
+    }
+
+    let meteorites;
+
+    // Load meteorite CSV
+    function preload() {
+      meteorites = loadTable(
+        'Meteorite_Landings.csv',
+        'csv',
+        'header'
+      );
+    }
+
+    // Set up p5 canvas
+    function setup() {
+      const canvas = createCanvas(
+        windowWidth,
+        windowHeight
+      );
+
+      canvas.parent('map');
+
+      // Redraw symbols when map moves
+      myMap.on('move', () => redraw());
+
+      // Draw when basemap first loads
+      myMap.on('load', () => redraw());
+
+      noLoop();
+    }
+
+    // Circle size represents meteorite mass
+    function symbolSize(massInGrams) {
+      return 2 + 38 * sqrt(
+        massInGrams / 60000000
+      );
+    }
+
+    // Draw meteorites
+    function draw() {
+      clear();
+
+      const bounds = myMap.getBounds();
+
+      for (let i = 0; i < meteorites.getRowCount(); i++) {
+
+        const lat = meteorites.getNum(i, 'reclat');
+        const lng = meteorites.getNum(i, 'reclong');
+        const mass = meteorites.getNum(i, 'mass (g)');
+
+        // Skip records with invalid coordinates
+        if (!Number.isFinite(lat) ||
+            !Number.isFinite(lng) ||
+            lat < -90 || lat > 90 ||
+            lng < -180 || lng > 180) {
+          continue;
+        }
+
+        // Only draw meteorites visible on map
+        if (!bounds.contains([lng, lat])) {
+          continue;
+        }
+
+        const pos = latLngToPixel(lat, lng);
+
+        // Use a small minimum size if mass is missing
+        const size = Number.isFinite(mass) && mass >= 0
+          ? symbolSize(mass)
+          : 2;
+
+        // Observed meteorite falls
+        if (meteorites.getString(i, 'fall') === 'Fell') {
+
+          fill(220, 85, 45, 220);
+          stroke(120, 40, 20);
+          strokeWeight(1);
+
+        } else {
+
+          // Meteorites discovered later
+          fill(40, 100, 170, 160);
+          stroke(20, 60, 110);
+          strokeWeight(0.5);
+
+        }
+
+        ellipse(pos.x, pos.y, size, size);
+      }
+
+      // Draw legend
+      drawLegend();
+    }
+
+    // Legend
+    function drawLegend() {
+
+      const x = 20;
+      const y = height - 90;
+
+      // White legend background
+      noStroke();
+      fill(255, 255, 255, 235);
+      rect(x - 10, y - 30, 340, 115, 6);
+
+      // Legend title
+      fill(40);
+      textSize(14);
+      textStyle(BOLD);
+      text(
+        "Meteorites of North America",
+        x,
+        y - 10
+      );
+
+      // Subtitle
+      textStyle(NORMAL);
+      textSize(11);
+      text(
+        "Explore historical meteorite records",
+        x,
+        y + 7
+      );
+
+      // Orange symbol: Fell
+      fill(220, 85, 45, 220);
+      stroke(120, 40, 20);
+      strokeWeight(1);
+      ellipse(x + 8, y + 28, 12, 12);
+
+      noStroke();
+      fill(40);
+      textSize(12);
+      text(
+        "Observed falling (Fell)",
+        x + 24,
+        y + 32
+      );
+
+      // Blue symbol: Found
+      fill(40, 100, 170, 160);
+      stroke(20, 60, 110);
+      strokeWeight(0.5);
+      ellipse(x + 8, y + 52, 12, 12);
+
+      noStroke();
+      fill(40);
+      text(
+        "Discovered later (Found)",
+        x + 24,
+        y + 56
+      );
+
+      // Explain circle sizes
+      textSize(10);
+      text(
+        "Circle size represents meteorite mass (g)",
+        x,
+        y + 75
+      );
+    }
+
+    // Resize canvas when browser window changes
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      myMap.resize();
+      redraw();
+    }
+
+  </script>
+</body>
+</html>
